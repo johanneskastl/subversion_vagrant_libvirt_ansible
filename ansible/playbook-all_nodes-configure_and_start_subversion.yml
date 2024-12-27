@@ -1,0 +1,361 @@
+---
+- name: 'Configure subversion and start apache2'
+  hosts: 'all'
+  gather_facts: true
+  become: true
+
+  handlers:
+
+    - name: 'Restart the svnserve service'
+      ansible.builtin.service:
+        name: 'svnserve'
+        state: 'restarted'
+      when:
+        - 'not svnserve_service_started.changed | bool'
+
+    - name: 'Restart the apache2 service'
+      ansible.builtin.service:
+        name: 'apache2'
+        state: 'restarted'
+      when:
+        - 'not apache2_service_started.changed | bool'
+
+  tasks:
+
+    - name: 'Make wwwrun user a member of the svn group'
+      ansible.builtin.user:
+        name: 'wwwrun'
+        state: 'present'
+        groups: 'svn'
+        append: true
+
+    - name: 'Create the users in the operating system'
+      ansible.builtin.user:
+        name: "{{ item }}"
+        state: 'present'
+        password: "{{ 'dobby' | password_hash('sha512', 'mysecretsalt') }}"
+      loop:
+        - 'hgranger'
+        - 'hpotter'
+        - 'rweasley'
+
+    - name: 'Create the directories in /srv/svn/ (except /srv/svn/repos)'
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: 'directory'
+        owner: 'svn'
+        group: 'svn'
+        mode: '0770'
+      loop:
+        - '/srv/svn/'
+        - '/srv/svn/auth'
+        - '/srv/svn/html'
+        - '/srv/svn/user_access'
+
+    - name: 'Create the /srv/svn/repos directory'
+      ansible.builtin.file:
+        path: '/srv/svn/repos'
+        state: 'directory'
+        owner: 'svn'
+        group: 'svn'
+        mode: '2770'
+
+    - name: 'Install python311-passlib'
+      ansible.builtin.package:
+        name: 'python311-passlib'
+        state: 'present'
+
+    #
+    # hosting svn at "/"
+    #
+
+    - name: 'Create the password file for the list of projects'
+      community.general.htpasswd:
+        path: '/srv/svn/auth/htpasswd'
+        name: "{{ item }}"
+        password: 'dobby'
+        owner: 'svn'
+        group: 'svn'
+        mode: '0640'
+      loop:
+        - 'hgranger'
+        - 'hpotter'
+        - 'rweasley'
+
+    #
+    # myproject1
+    #
+
+    - name: 'Create the password file for myproject1'
+      community.general.htpasswd:
+        path: '/srv/svn/user_access/myproject1_passwdfile'
+        name: "{{ item }}"
+        password: 'dobby'
+        owner: 'svn'
+        group: 'svn'
+        mode: '0640'
+      loop:
+        - 'hgranger'
+        - 'hpotter'
+        - 'rweasley'
+
+    - name: 'Create the group file for myproject1'
+      ansible.builtin.copy:
+        dest: '/srv/svn/user_access/myproject1_groupfile'
+        content: |
+            myproject1_committers: hgranger hpotter
+            myproject1_readers: hgranger hpotter rweasley
+        owner: 'svn'
+        group: 'svn'
+        mode: '0640'
+
+    - name: 'Create the myproject1 repo'
+      ansible.builtin.command:
+        cmd: 'svnadmin create myproject1'
+        creates: '/srv/svn/repos/myproject1/locks'
+        chdir: '/srv/svn/repos'
+
+    - name: 'Create the passwd file for svnserve in myproject1'
+      ansible.builtin.copy:
+        dest: '/srv/svn/repos/myproject1/conf/passwd'
+        content: |
+            [users]
+            hgranger = dobby
+            hpotter = dobby
+        owner: 'svn'
+        group: 'svn'
+        mode: '2660'
+
+    - name: 'Create the svnserve.conf file for svnserve in myproject1'
+      ansible.builtin.copy:
+        dest: '/srv/svn/repos/myproject1/conf/svnserve.conf'
+        content: |
+          [general]
+          Anon-access = none
+          Auth-access = write
+          Password-db = passwd
+          Realm = myproject1
+
+          [sasl]
+          Use-sasl = false
+        owner: 'svn'
+        group: 'svn'
+        mode: '2660'
+
+    - name: 'Make sure the permissions on the myproject1 directory are correct'
+      ansible.builtin.file:
+        path: '/srv/svn/repos/myproject1/'
+        state: 'directory'
+        recurse: true
+        owner: 'svn'
+        group: 'svn'
+        mode: 'o-rwx'
+
+    - name: 'Make sure the permissions on the myproject1 repository files are correct'
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: 'directory'
+        recurse: true
+        owner: 'svn'
+        group: 'svn'
+        mode: 'o-rwx'
+      loop:
+        - '/srv/svn/repos/myproject1/db/'
+        - '/srv/svn/repos/myproject1/locks/'
+
+    #
+    # myproject2
+    #
+
+    - name: 'Create the password file for myproject2'
+      community.general.htpasswd:
+        path: '/srv/svn/user_access/myproject2_passwdfile'
+        name: "{{ item }}"
+        password: 'dobby'
+        owner: 'svn'
+        group: 'svn'
+        mode: '0640'
+      loop:
+        # only Hermione here...
+        - 'hgranger'
+
+    - name: 'Create the group file for myproject2'
+      ansible.builtin.copy:
+        dest: '/srv/svn/user_access/myproject2_groupfile'
+        content: |
+            myproject2_committers: hgranger
+            myproject2_readers: hgranger
+        owner: 'svn'
+        group: 'svn'
+        mode: '0640'
+
+    - name: 'Create the myproject2 repo'
+      ansible.builtin.command:
+        cmd: 'svnadmin create myproject2'
+        creates: '/srv/svn/repos/myproject2/locks'
+        chdir: '/srv/svn/repos'
+
+    - name: 'Create the passwd file for svnserve in myproject2'
+      ansible.builtin.copy:
+        dest: '/srv/svn/repos/myproject2/conf/passwd'
+        content: |
+            [users]
+            hgranger = dobby
+        owner: 'svn'
+        group: 'svn'
+        mode: '2660'
+
+    - name: 'Create the svnserve.conf file for svnserve in myproject2'
+      ansible.builtin.copy:
+        dest: '/srv/svn/repos/myproject2/conf/svnserve.conf'
+        content: |
+          [general]
+          Anon-access = none
+          Auth-access = write
+          Password-db = passwd
+          Realm = myproject2
+
+          [sasl]
+          Use-sasl = false
+        owner: 'svn'
+        group: 'svn'
+        mode: '2660'
+
+    - name: 'Make sure the permissions on the myproject2 directory are correct'
+      ansible.builtin.file:
+        path: '/srv/svn/repos/myproject2/'
+        state: 'directory'
+        recurse: true
+        owner: 'svn'
+        group: 'svn'
+        mode: 'o-rwx'
+
+    - name: 'Make sure the permissions on the myproject2 repository files are correct'
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: 'directory'
+        recurse: true
+        owner: 'svn'
+        group: 'svn'
+        mode: 'o-rwx'
+      loop:
+        - '/srv/svn/repos/myproject2/db/'
+        - '/srv/svn/repos/myproject2/locks/'
+
+    #
+    # setgid permissions on /srv/svn/repos
+    #
+
+    - name: 'Recursively set the setgid permissions on /srv/svn/repos'
+      ansible.builtin.file:
+        path: '/srv/svn/repos'
+        state: 'directory'
+        recurse: true
+        mode: 'g+ws'
+
+    #
+    # svnserve configuration
+    #
+
+    - name: 'Allow writes via svnserve'
+      ansible.builtin.lineinfile:
+        path: '/etc/sysconfig/svnserve'
+        regexp: '^SVNSERVE_OPTIONS'
+        line: 'SVNSERVE_OPTIONS="-d -r /srv/svn/repos"'
+        owner: 'root'
+        group: 'root'
+        mode: '0644'
+      notify:
+        - 'Restart the apache2 service'
+
+    - name: 'Start the svnserve service'
+      ansible.builtin.service:
+        name: 'svnserve'
+        state: 'started'
+      register: svnserve_service_started
+
+    - name: 'Enable the svnserve service'
+      ansible.builtin.service:
+        name: 'svnserve'
+        enabled: true
+
+    #
+    # Apache2 configuration
+    #
+
+    - name: 'Create a simple index.html'
+      ansible.builtin.copy:
+        dest: '/srv/www/htdocs/index.html'
+        content: |
+            Subversion server via vagrant-libvirt
+        owner: 'root'
+        group: 'root'
+        mode: '0644'
+
+    - name: 'Enable the modules in /etc/sysconfig/apache2'
+      ansible.builtin.lineinfile:
+        path: '/etc/sysconfig/apache2'
+        regexp: '^APACHE_MODULES='
+        line: 'APACHE_MODULES="actions alias auth_basic authn_core authn_file authz_host authz_groupfile authz_core authz_user autoindex cgi dir env expires include log_config mime negotiation setenvif ssl socache_shmcb userdir reqtimeout dav dav_svn"'
+        owner: 'root'
+        group: 'root'
+        mode: '0644'
+      notify:
+        - 'Restart the apache2 service'
+
+    - name: 'Set MaxKeepAliveRequests in httpd.conf'
+      ansible.builtin.lineinfile:
+        path: '/etc/apache2/server-tuning.conf'
+        regexp: '^MaxKeepAliveRequests'
+        line: 'MaxKeepAliveRequests 10000'
+        owner: 'svn'
+        group: 'svn'
+        mode: '0644'
+      notify:
+        - 'Restart the apache2 service'
+
+    - name: 'Create /etc/apache2/conf.d/subversion.conf'
+      ansible.builtin.template:
+        src: 'subversion.conf.j2'
+        dest: '/etc/apache2/conf.d/subversion.conf'
+        owner: 'root'
+        group: 'root'
+        mode: '0644'
+      notify:
+        - 'Restart the apache2 service'
+
+    - name: 'Start the apache2 service'
+      ansible.builtin.service:
+        name: 'apache2'
+        state: 'started'
+      register: apache2_service_started
+
+    - name: 'Enable the apache2 service'
+      ansible.builtin.service:
+        name: 'apache2'
+        enabled: true
+
+    - name: 'Output the svn info command for myproject1 via svnserve'
+      delegate_to: 'localhost'
+      ansible.builtin.debug:
+        msg: "Check myproject1 via svnserve as hpotter (password: dobby): 'svn --username hpotter info svn://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}.sslip.io/myproject1'"
+
+    - name: 'Output the svn info command for myproject1 via apache2'
+      delegate_to: 'localhost'
+      ansible.builtin.debug:
+        msg: "Check myproject1 via http as hpotter (password: dobby): 'svn --username hpotter info http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}.sslip.io/repos/myproject1'"
+
+    - name: 'Output the failing svn info command for myproject2 via apache2'
+      delegate_to: 'localhost'
+      ansible.builtin.debug:
+        msg: "Trying to check myproject2 as hpotter fails (password: dobby): 'svn --username hpotter info http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}.sslip.io/repos/myproject1'"
+
+    - name: 'Output the succeeding svn info command for myproject2 via apache2'
+      delegate_to: 'localhost'
+      ansible.builtin.debug:
+        msg: "Trying to check myproject2 as hgranger succeeds (password: dobby): 'svn --username hgranger info http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}.sslip.io/repos/myproject1'"
+
+    - name: 'Output the Apache2 URL'
+      delegate_to: 'localhost'
+      ansible.builtin.debug:
+        msg: "Apache2 is reachable at http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}.sslip.io"
