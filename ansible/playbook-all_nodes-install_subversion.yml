@@ -1,0 +1,15 @@
+---
+- name: 'Install subversion'
+  hosts: 'all'
+  gather_facts: true
+  become: true
+
+  roles:
+    - role: 'johanneskastl.install_one_or_more_packages'
+      packages_to_be_installed:
+        - subversion
+        - subversion-bash-completion
+        - subversion-doc
+        - subversion-server
+        - subversion-tools
+        - apache2-utils
