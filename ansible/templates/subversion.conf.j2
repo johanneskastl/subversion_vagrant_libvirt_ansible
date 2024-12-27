@@ -1,0 +1,87 @@
+<IfModule mod_dav_svn.c>
+
+##
+## Hosting svn at "/"
+##
+<VirtualHost *>
+    ServerName {{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}.sslip.io
+    ErrorLog    /var/log/apache2/svn-error_log
+    TransferLog /var/log/apache2/svn-access_log
+    #
+    # Do not set DocumentRoot. It is not needed here and just causes trouble.
+    #
+    # Map the error documents back to their defaults.
+    # Otherwise mod_dav_svn tries to find a "error" repository.
+    #
+    ErrorDocument 400 default
+    ErrorDocument 401 default
+    ErrorDocument 403 default
+    ErrorDocument 404 default
+    ErrorDocument 405 default
+    ErrorDocument 408 default
+    ErrorDocument 410 default
+    ErrorDocument 411 default
+    ErrorDocument 412 default
+    ErrorDocument 413 default
+    ErrorDocument 414 default
+    ErrorDocument 415 default
+    ErrorDocument 500 default
+    ErrorDocument 501 default
+    ErrorDocument 502 default
+    ErrorDocument 503 default
+    #
+    <Location /repos>
+
+       DAV svn
+       SVNParentPath /srv/svn/repos/
+       SVNListParentPath on
+
+       AuthType Basic
+       AuthName "SVN project list"
+       AuthUserFile /srv/svn/auth/htpasswd
+       Require valid-user
+
+    </Location>
+    <Location /repos/myproject1>
+
+       AuthType Basic
+       AuthName "SVN myproject1"
+       AuthUserFile /srv/svn/user_access/myproject1_passwdfile
+       AuthGroupFile /srv/svn/user_access/myproject1_groupfile
+
+       # Limit read access to certain people
+       <Limit GET PROPFIND OPTIONS REPORT>
+          Require group myproject1_committers
+          Require group myproject1_readers
+       </Limit>
+
+       # Limit write permission to list of valid users.
+       <LimitExcept GET PROPFIND OPTIONS REPORT>
+          Require group myproject1_committers
+       </LimitExcept>
+
+    </Location>
+
+    <Location /repos/myproject2>
+
+       AuthType Basic
+       AuthName "SVN myproject2"
+       AuthUserFile /srv/svn/user_access/myproject2_passwdfile
+       AuthGroupFile /srv/svn/user_access/myproject2_groupfile
+
+       # Limit read access to certain people
+       <Limit GET PROPFIND OPTIONS REPORT>
+          Require group myproject2_committers
+          Require group myproject2_readers
+       </Limit>
+
+       # Limit write permission to list of valid users.
+       <LimitExcept GET PROPFIND OPTIONS REPORT>
+          Require group myproject2_committers
+       </LimitExcept>
+
+    </Location>
+
+</VirtualHost>
+
+</IfModule>
